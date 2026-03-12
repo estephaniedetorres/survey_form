@@ -1,11 +1,14 @@
 <?php
 include("../config/db.php");
+session_start();
+$is_guest = isset($_GET['guest']) && $_GET['guest'] == '1';
+$is_logged_in = isset($_SESSION['username']);
 
 $success = false;
 $link = "";
 $new_survey_id = 0;
 
-if(isset($_POST['create'])){
+if(($is_logged_in || $is_guest) && isset($_POST['create'])){
     $title = $_POST['title'];
     $desc = $_POST['description'];
     $password = $_POST['password'];
@@ -47,6 +50,12 @@ $surveys = $conn->query("SELECT * FROM surveys ORDER BY created_at DESC");
         <a href="../index.php" class="text-gray-500 hover:text-black">&larr; Back to Home</a>
     </div>
 
+    <?php if(!$is_logged_in && !$is_guest): ?>
+        <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-6">
+            <p class="text-black mb-2">You must <a href="../public/login.php" class="underline">login</a> or <a href="create_survey.php?guest=1" class="underline">continue as guest</a> to create a survey.</p>
+        </div>
+    <?php endif; ?>
+
     <?php if($success): ?>
     <div class="bg-gray-50 border border-gray-200 rounded p-4 mb-6">
         <p class="font-semibold text-black mb-2">Survey created!</p>
@@ -63,6 +72,7 @@ $surveys = $conn->query("SELECT * FROM surveys ORDER BY created_at DESC");
     </div>
     <?php endif; ?>
 
+    <?php if($is_logged_in || $is_guest): ?>
     <form method="POST" class="bg-white border border-gray-200 p-6 rounded mb-8">
         <h1 class="text-xl font-bold mb-4 text-black">Create Survey</h1>
 
@@ -80,6 +90,7 @@ $surveys = $conn->query("SELECT * FROM surveys ORDER BY created_at DESC");
             Create Survey
         </button>
     </form>
+    <?php endif; ?>
 
     <div class="bg-white border border-gray-200 p-6 rounded">
         <h2 class="text-lg font-bold mb-4 text-black">Existing Surveys</h2>
