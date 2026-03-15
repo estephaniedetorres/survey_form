@@ -7,19 +7,54 @@ if(!isset($_GET['survey_id']) || !is_numeric($_GET['survey_id'])){
 
 $survey_id = (int)$_GET['survey_id'];
 
-// Verify survey exists
 $stmt = $conn->prepare("SELECT * FROM surveys WHERE id = ?");
 $stmt->bind_param("i", $survey_id);
 $stmt->execute();
 $survey = $stmt->get_result()->fetch_assoc();
 
 if(!$survey){
-    die("Survey not found. <a href='create_survey.php'>Go back</a>");
+    die("Survey not found.");
 }
 
 $message = "";
 
+if(isset($_POST['demo_question_text'])){
+
+    foreach($_POST['demo_question_text'] as $index => $question){
+
+        $type = $_POST['demo_type'][$index];
+
+        $stmt = $conn->prepare("INSERT INTO questions(survey_id, question, type, required) VALUES(?, ?, ?, 0)");
+        $stmt->bind_param("iss", $survey_id, $question, $type);
+        $stmt->execute();
+
+        $question_id = $conn->insert_id;
+
+        if($type != "text"){
+
+            $options = $_POST["demo_options_$index"] ?? [];
+
+            foreach($options as $opt){
+
+                if(trim($opt) != ""){
+
+                    $stmt2 = $conn->prepare("INSERT INTO options(question_id, option_text) VALUES(?, ?)");
+                    $stmt2->bind_param("is", $question_id, $opt);
+                    $stmt2->execute();
+
+                }
+
+            }
+
+        }
+
+    }
+
+    $message = "Demographics questions added!";
+}
+
 if(isset($_POST['add'])){
+
     $q = $_POST['question'];
     $type = $_POST['type'];
     $required = isset($_POST['required']) ? 1 : 0;
@@ -27,297 +62,312 @@ if(isset($_POST['add'])){
     $stmt = $conn->prepare("INSERT INTO questions(survey_id, question, type, required) VALUES(?, ?, ?, ?)");
     $stmt->bind_param("issi", $survey_id, $q, $type, $required);
     $stmt->execute();
+
     $question_id = $conn->insert_id;
 
     if($type != "text" && !empty($_POST['options'])){
+
         foreach($_POST['options'] as $opt){
-            $opt = trim($opt);
-            if($opt !== ""){
+
+            if(trim($opt) != ""){
+
                 $stmt2 = $conn->prepare("INSERT INTO options(question_id, option_text) VALUES(?, ?)");
                 $stmt2->bind_param("is", $question_id, $opt);
                 $stmt2->execute();
+
             }
+
         }
+
     }
 
     $message = "Question added!";
 }
 
-// Handle question deletion
-if(isset($_GET['delete_q']) && is_numeric($_GET['delete_q'])){
-    $qid = (int)$_GET['delete_q'];
-    $conn->prepare("DELETE FROM options WHERE question_id = ?")->execute() || true;
-    $del = $conn->prepare("DELETE FROM options WHERE question_id = ?");
-    $del->bind_param("i", $qid);
-    $del->execute();
-    $del2 = $conn->prepare("DELETE FROM questions WHERE id = ? AND survey_id = ?");
-    $del2->bind_param("ii", $qid, $survey_id);
-    $del2->execute();
-    header("Location: add_questions.php?survey_id=$survey_id");
-    exit;
-}
-
-// Handle question edit
-if(isset($_POST['edit_question'])){
-    $qid = (int)$_POST['edit_id'];
-    $q_text = $_POST['edit_question_text'];
-    $q_type = $_POST['edit_type'];
-    $q_required = isset($_POST['edit_required']) ? 1 : 0;
-
-    $stmt = $conn->prepare("UPDATE questions SET question = ?, type = ?, required = ? WHERE id = ? AND survey_id = ?");
-    $stmt->bind_param("ssiii", $q_text, $q_type, $q_required, $qid, $survey_id);
-    $stmt->execute();
-
-    // Delete old options
-    $del_opts = $conn->prepare("DELETE FROM options WHERE question_id = ?");
-    $del_opts->bind_param("i", $qid);
-    $del_opts->execute();
-
-    // Insert new options if not text
-    if($q_type != "text" && !empty($_POST['edit_options'])){
-        foreach($_POST['edit_options'] as $opt){
-            $opt = trim($opt);
-            if($opt !== ""){
-                $stmt2 = $conn->prepare("INSERT INTO options(question_id, option_text) VALUES(?, ?)");
-                $stmt2->bind_param("is", $qid, $opt);
-                $stmt2->execute();
-            }
-        }
-    }
-
-    $message = "Question updated!";
-}
-
-// Get existing questions
-$questions = $conn->query("SELECT * FROM questions WHERE survey_id = " . (int)$survey_id);
+$questions = $conn->query("SELECT * FROM questions WHERE survey_id = $survey_id");
 ?>
+
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add Questions - <?= htmlspecialchars($survey['title']) ?></title>
-    <script src="https://cdn.tailwindcss.com"></script>
+
+<meta charset="UTF-8">
+<title>Add Questions</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
 </head>
+
 <body class="bg-white min-h-screen py-10">
 
 <div class="max-w-2xl mx-auto px-4">
 
-    <div class="mb-6 flex justify-between items-center">
-        <a href="create_survey.php" class="text-gray-500 hover:text-black">&larr; Back to Surveys</a>
-    </div>
+<a href="create_survey.php" class="text-gray-500 hover:text-black mb-6 block">
+← Back to Surveys
+</a>
 
-    <div class="bg-white border border-gray-200 p-4 rounded mb-6">
-        <h1 class="text-xl font-bold text-black"><?= htmlspecialchars($survey['title']) ?></h1>
-        <p class="text-gray-500 text-sm"><?= htmlspecialchars($survey['description']) ?></p>
-    </div>
+<div class="bg-white border border-gray-200 p-4 rounded mb-6">
+<h1 class="text-xl font-bold"><?= htmlspecialchars($survey['title']) ?></h1>
+<p class="text-gray-500 text-sm"><?= htmlspecialchars($survey['description']) ?></p>
+</div>
 
-    <?php if($message): ?>
-        <div class="bg-gray-50 border border-gray-200 text-black p-3 rounded mb-4">
-            <?= $message ?>
-        </div>
-    <?php endif; ?>
+<?php if($message): ?>
 
-    <form method="POST" class="bg-white border border-gray-200 p-6 rounded mb-8">
-        <h2 class="text-lg font-bold mb-4 text-black">Add a Question</h2>
+<div class="bg-gray-50 border border-gray-200 p-3 rounded mb-4">
+<?= $message ?>
+</div>
 
-        <input name="question" placeholder="Question text" required
-            class="border border-gray-300 bg-white text-black p-2 w-full mb-3 placeholder-gray-400">
+<?php endif; ?>
 
-        <select name="type" id="qtype" onchange="toggleOptions()" class="border border-gray-300 bg-white text-black p-2 w-full mb-3">
-            <option value="text">Text (free response)</option>
-            <option value="radio">Multiple Choice (pick one)</option>
-            <option value="checkbox">Checkbox (pick multiple)</option>
-        </select>
 
-        <label class="flex items-center gap-2 mb-3 text-sm text-gray-700">
-            <input type="checkbox" name="required" value="1">
-            Required question
-        </label>
 
-        <div id="options-section" class="hidden mb-3">
-            <label class="block text-sm font-semibold mb-2 text-gray-600">Options:</label>
-            <div id="options-list">
-                <input name="options[]" placeholder="Option 1" class="border border-gray-300 bg-white text-black p-2 w-full mb-2 placeholder-gray-400">
-                <input name="options[]" placeholder="Option 2" class="border border-gray-300 bg-white text-black p-2 w-full mb-2 placeholder-gray-400">
-            </div>
-            <button type="button" onclick="addOption()"
-                class="text-gray-500 text-sm hover:text-black">+ Add another option</button>
-        </div>
+<button onclick="addDemographics()"
+class="bg-gray-100 border border-gray-300 text-black px-4 py-2 rounded mb-6 hover:bg-gray-200">
++ Add Demographics Section
+</button>
 
-        <button name="add"
-            class="bg-black text-white px-4 py-2 rounded font-medium hover:bg-gray-800">
-            Add Question
-        </button>
-    </form>
 
-    <div class="bg-white border border-gray-200 p-6 rounded">
-        <h2 class="text-lg font-bold mb-4 text-black">
-            Questions (<?= $questions->num_rows ?>)
-        </h2>
+<form method="POST" id="demographics-container"
+class="hidden bg-white border border-gray-200 p-6 rounded mb-8">
 
-        <?php if($questions->num_rows == 0): ?>
-            <p class="text-gray-400">No questions added yet.</p>
-        <?php else: ?>
-            <?php $num = 1; while($q = $questions->fetch_assoc()): ?>
-                <div class="border-b border-gray-200 pb-3 mb-3">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="font-semibold text-black"><?= $num ?>. <?= htmlspecialchars($q['question']) ?></p>
-                            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                                <?= $q['type'] == 'text' ? 'Text' : ($q['type'] == 'radio' ? 'Multiple Choice' : 'Checkbox') ?>
-                            </span>
-                            <?php if($q['required']): ?>
-                                <span class="text-xs bg-black text-white px-2 py-0.5 rounded">Required</span>
-                            <?php endif; ?>
-                        </div>
-                        <div class="flex gap-2">
-                            <button type="button" onclick="openEdit(<?= $q['id'] ?>, <?= htmlspecialchars(json_encode($q['question'])) ?>, '<?= $q['type'] ?>', <?= $q['required'] ?>)"
-                               class="text-gray-500 text-sm hover:text-black">Edit</button>
-                            <a href="?survey_id=<?= $survey_id ?>&delete_q=<?= $q['id'] ?>"
-                               class="text-gray-500 text-sm hover:text-black"
-                               onclick="return confirm('Delete this question?')">Delete</a>
-                        </div>
-                    </div>
-                    <?php
-                    $q_opts_json = [];
-                    if($q['type'] != 'text'){
-                        $opts = $conn->query("SELECT * FROM options WHERE question_id = " . (int)$q['id']);
-                        if($opts->num_rows > 0){
-                            echo '<ul class="ml-4 mt-1 text-sm text-gray-500">';
-                            while($o = $opts->fetch_assoc()){
-                                echo '<li>• ' . htmlspecialchars($o['option_text']) . '</li>';
-                                $q_opts_json[] = $o['option_text'];
-                            }
-                            echo '</ul>';
-                        }
-                    }
-                    ?>
-                    <script>if(!window.qOpts) window.qOpts={}; window.qOpts[<?= $q['id'] ?>]=<?= json_encode($q_opts_json) ?>;</script>
-                </div>
-            <?php $num++; endwhile; ?>
-        <?php endif; ?>
-    </div>
+<h2 class="text-lg font-bold mb-4">Demographics</h2>
+
+<div id="demographics-questions"></div>
+
+<button
+class="bg-black text-white px-4 py-2 rounded hover:bg-gray-800">
+Save Demographics Questions
+</button>
+
+</form>
+
+
+
+<form method="POST"
+class="bg-white border border-gray-200 p-6 rounded mb-8">
+
+<h2 class="text-lg font-bold mb-4">Add Question</h2>
+
+<input name="question"
+placeholder="Question text"
+required
+class="border border-gray-300 p-2 w-full mb-3">
+
+<select name="type"
+id="qtype"
+onchange="toggleOptions()"
+class="border border-gray-300 p-2 w-full mb-3">
+
+<option value="text">Text</option>
+<option value="radio">Multiple Choice</option>
+<option value="checkbox">Checkbox</option>
+
+</select>
+
+<label class="flex items-center gap-2 mb-3 text-sm">
+
+<input type="checkbox" name="required">
+
+Required
+
+</label>
+
+<div id="options-section" class="hidden">
+
+<input name="options[]" placeholder="Option 1"
+class="border border-gray-300 p-2 w-full mb-2">
+
+<input name="options[]" placeholder="Option 2"
+class="border border-gray-300 p-2 w-full mb-2">
+
+<button type="button"
+onclick="addOption()"
+class="text-gray-500 text-sm hover:text-black">
+
++ Add Option
+
+</button>
 
 </div>
+
+<button name="add"
+class="bg-black text-white px-4 py-2 rounded mt-3 hover:bg-gray-800">
+
+Add Question
+
+</button>
+
+</form>
+
+<div class="bg-white border border-gray-200 p-6 rounded">
+
+<h2 class="text-lg font-bold mb-4">
+Questions (<?= $questions->num_rows ?>)
+</h2>
+
+<?php if($questions->num_rows == 0): ?>
+
+<p class="text-gray-400">No questions added yet.</p>
+
+<?php else: ?>
+
+<?php $num=1; while($q=$questions->fetch_assoc()): ?>
+
+<div class="border-b border-gray-200 pb-3 mb-3">
+
+<p class="font-semibold">
+<?= $num ?>. <?= htmlspecialchars($q['question']) ?>
+</p>
+
+<span class="text-xs bg-gray-100 px-2 py-1 rounded">
+<?= $q['type'] ?>
+</span>
+
+<?php if($q['required']): ?>
+<span class="text-xs bg-black text-white px-2 py-1 rounded">
+Required
+</span>
+<?php endif; ?>
+
+</div>
+
+<?php $num++; endwhile; ?>
+
+<?php endif; ?>
+
+</div>
+
+</div>
+
 
 <script>
+
+
 function toggleOptions(){
-    var type = document.getElementById('qtype').value;
-    var section = document.getElementById('options-section');
-    section.classList.toggle('hidden', type === 'text');
+
+var type=document.getElementById("qtype").value;
+
+document.getElementById("options-section")
+.classList.toggle("hidden",type==="text");
+
 }
 
-var optCount = 2;
 function addOption(){
-    optCount++;
-    var div = document.getElementById('options-list');
-    var input = document.createElement('input');
-    input.name = 'options[]';
-    input.placeholder = 'Option ' + optCount;
-    input.className = 'border border-gray-300 bg-white text-black p-2 w-full mb-2 placeholder-gray-400';
-    div.appendChild(input);
+
+var div=document.getElementById("options-section");
+
+var input=document.createElement("input");
+
+input.name="options[]";
+input.placeholder="Option";
+input.className="border border-gray-300 p-2 w-full mb-2";
+
+div.insertBefore(input,div.lastElementChild);
+
 }
 
-function openEdit(id, question, type, required){
-    document.getElementById('edit-id').value = id;
-    document.getElementById('edit-question-text').value = question;
-    document.getElementById('edit-type').value = type;
-    document.getElementById('edit-required').checked = required == 1;
 
-    var optDiv = document.getElementById('edit-options-list');
-    optDiv.innerHTML = '';
-    var editOptSection = document.getElementById('edit-options-section');
-    editOptSection.classList.toggle('hidden', type === 'text');
 
-    var opts = (window.qOpts && window.qOpts[id]) ? window.qOpts[id] : [];
-    if(opts.length > 0){
-        opts.forEach(function(o, i){
-            var inp = document.createElement('input');
-            inp.name = 'edit_options[]';
-            inp.value = o;
-            inp.placeholder = 'Option ' + (i+1);
-            inp.className = 'border border-gray-300 bg-white text-black p-2 w-full mb-2 placeholder-gray-400';
-            optDiv.appendChild(inp);
-        });
-    } else if(type !== 'text') {
-        for(var i=1;i<=2;i++){
-            var inp = document.createElement('input');
-            inp.name = 'edit_options[]';
-            inp.placeholder = 'Option ' + i;
-            inp.className = 'border border-gray-300 bg-white text-black p-2 w-full mb-2 placeholder-gray-400';
-            optDiv.appendChild(inp);
-        }
-    }
+function addDemographics(){
 
-    document.getElementById('edit-modal').classList.remove('hidden');
-}
+const container=document.getElementById("demographics-container");
+const list=document.getElementById("demographics-questions");
 
-function closeEdit(){
-    document.getElementById('edit-modal').classList.add('hidden');
-}
+container.classList.remove("hidden");
 
-function toggleEditOptions(){
-    var type = document.getElementById('edit-type').value;
-    document.getElementById('edit-options-section').classList.toggle('hidden', type === 'text');
-}
+if(list.innerHTML!="") return;
 
-function addEditOption(){
-    var div = document.getElementById('edit-options-list');
-    var count = div.querySelectorAll('input').length + 1;
-    var inp = document.createElement('input');
-    inp.name = 'edit_options[]';
-    inp.placeholder = 'Option ' + count;
-    inp.className = 'border border-gray-300 bg-white text-black p-2 w-full mb-2 placeholder-gray-400';
-    div.appendChild(inp);
-}
-</script>
+const demographics=[
 
-<!-- Edit Modal -->
-<div id="edit-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white border border-gray-200 rounded p-6 w-full max-w-lg mx-4">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-bold text-black">Edit Question</h2>
-            <button type="button" onclick="closeEdit()" class="text-gray-400 hover:text-black text-xl">&times;</button>
-        </div>
-        <form method="POST">
-            <input type="hidden" name="edit_question" value="1">
-            <input type="hidden" name="edit_id" id="edit-id">
+"Where do you live?",
+"What is your age?",
+"What is your gender?",
+"What is your education level?",
+"What is your occupation?",
+"What is your marital status?"
 
-            <input name="edit_question_text" id="edit-question-text" placeholder="Question text" required
-                class="border border-gray-300 bg-white text-black p-2 w-full mb-3 placeholder-gray-400">
+];
 
-            <select name="edit_type" id="edit-type" onchange="toggleEditOptions()" class="border border-gray-300 bg-white text-black p-2 w-full mb-3">
-                <option value="text">Text (free response)</option>
-                <option value="radio">Multiple Choice (pick one)</option>
-                <option value="checkbox">Checkbox (pick multiple)</option>
-            </select>
+demographics.forEach((q,i)=>{
 
-            <label class="flex items-center gap-2 mb-3 text-sm text-gray-700">
-                <input type="checkbox" name="edit_required" id="edit-required" value="1">
-                Required question
-            </label>
+list.innerHTML+=`
 
-            <div id="edit-options-section" class="hidden mb-3">
-                <label class="block text-sm font-semibold mb-2 text-gray-600">Options:</label>
-                <div id="edit-options-list"></div>
-                <button type="button" onclick="addEditOption()"
-                    class="text-gray-500 text-sm hover:text-black">+ Add another option</button>
-            </div>
+<div class="border border-gray-200 rounded p-4 mb-4">
 
-            <div class="flex gap-2">
-                <button type="submit"
-                    class="bg-black text-white px-4 py-2 rounded font-medium hover:bg-gray-800">
-                    Save Changes
-                </button>
-                <button type="button" onclick="closeEdit()"
-                    class="border border-gray-300 text-black px-4 py-2 rounded hover:bg-gray-50">
-                    Cancel
-                </button>
-            </div>
-        </form>
-    </div>
+<input type="hidden" name="demo_question_text[]" value="${q}">
+
+<p class="font-semibold mb-2">${i+1}. ${q}</p>
+
+<select name="demo_type[]"
+onchange="updateDemoOptions(this)"
+class="border border-gray-300 p-2 w-full mb-3">
+
+<option value="text">Text</option>
+<option value="radio">Multiple Choice</option>
+<option value="checkbox">Checkbox</option>
+
+</select>
+
+<div class="demo-options hidden">
+
+<input name="demo_options_${i}[]" placeholder="Option 1"
+class="border border-gray-300 p-2 w-full mb-2">
+
+<input name="demo_options_${i}[]" placeholder="Option 2"
+class="border border-gray-300 p-2 w-full mb-2">
+
+<button type="button"
+onclick="addDemoOption(this)"
+class="text-sm text-gray-500 hover:text-black">
+
++ Add Option
+
+</button>
+
 </div>
+
+</div>
+`;
+
+});
+
+}
+
+
+function updateDemoOptions(select){
+
+const optionBox=select.parentElement.querySelector(".demo-options");
+
+if(select.value==="text"){
+
+optionBox.classList.add("hidden");
+
+}else{
+
+optionBox.classList.remove("hidden");
+
+}
+
+}
+
+
+function addDemoOption(btn){
+
+const container=btn.parentElement;
+
+const count=container.querySelectorAll("input").length+1;
+
+const input=document.createElement("input");
+
+input.placeholder="Option "+count;
+input.name=container.querySelector("input").name;
+input.className="border border-gray-300 p-2 w-full mb-2";
+
+container.insertBefore(input,btn);
+
+}
+
+</script>
 
 </body>
 </html>
